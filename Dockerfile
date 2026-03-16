@@ -1,7 +1,10 @@
 # Builder
 FROM golang:1.25.2 AS builder
 
-RUN apk add --no-cache protobuf protobuf-dev make
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler \
+    make \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
