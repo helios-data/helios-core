@@ -3,7 +3,7 @@ package commhandler
 import (	
 	"google.golang.org/protobuf/proto"
 
-	packet "helios/generated/go/transport"
+	packet "helios/generated/transport"
 )
 
 func CreateTransportPacket(id int32, address string, data []byte) (*packet.TransportPacket, error) {

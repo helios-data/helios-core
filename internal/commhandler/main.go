@@ -5,7 +5,7 @@ import (
 	"io"
 	"net"
 
-	packet "helios/generated/go/transport"
+	packet "helios/generated/transport"
 )
 
 const (

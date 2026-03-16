@@ -3,7 +3,7 @@ package client
 import (
 	"os"
 
-	"helios/generated/go/config"
+	"helios/generated/config"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
