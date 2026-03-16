@@ -14,12 +14,11 @@ RUN go mod download && \
 
 COPY . ./
 
-RUN mkdir -p generated && \
-    find helios-protos -name "*.proto" | xargs \
+RUN find helios-protos -name "*.proto" | xargs \
     protoc \
       -I=helios-protos \
       -I=/usr/include \
-      --go_out=generated
+      --go_out=.
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o bin/helios ./cmd/helios
 
