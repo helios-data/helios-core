@@ -3,7 +3,7 @@ package commhandler
 import (
 	"net"
 	
-	packet "helios/generated/go/transport"
+	packet "helios/generated/transport"
 )
 
 func (c *CommClient) GetConn() net.Conn {

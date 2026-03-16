@@ -8,7 +8,7 @@ PROTO_SOURCE_DIR=helios-protos
 PROTO_BUILD_DIR=generated
 
 # Find all .proto files in the proto directory and subdirectories
-PROTO_SRC := $(wildcard $(PROTO_SOURCE_DIR)/**/*.proto)
+PROTO_SRC := $(shell find $(PROTO_SOURCE_DIR) -name "*.proto")
 
 # 1=true, 0=false
 DOCKER_DISABLED=1

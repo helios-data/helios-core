@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"helios/generated/go/config"
+	"helios/generated/config"
 	"helios/internal/commhandler"
 	"helios/internal/dockerhandler"
 )
