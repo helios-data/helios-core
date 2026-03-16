@@ -3,7 +3,7 @@ FROM golang:1.25.2 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler \
-    make \
+    libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,7 +14,12 @@ RUN go mod download && \
 
 COPY . ./
 
-RUN make proto
+RUN mkdir -p generated && \
+    find helios-protos -name "*.proto" | xargs \
+    protoc \
+      -I=helios-protos \
+      -I=/usr/include \
+      --go_out=generated
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o bin/helios ./cmd/helios
 
