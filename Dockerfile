@@ -1,14 +1,17 @@
 # Builder
 FROM golang:1.25.2 AS builder
 
+RUN apk add --no-cache protobuf protobuf-dev make
+
 WORKDIR /app
 
-COPY /internal /app/internal
-
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && \
+    go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 
 COPY . ./
+
+RUN make proto
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o bin/helios ./cmd/helios
 
