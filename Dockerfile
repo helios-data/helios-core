@@ -21,17 +21,6 @@ RUN find helios-protos -name "*.proto" | xargs protoc \
     --go_out=generated \
     --go_opt=paths=source_relative
 
-# RUN find helios-protos -name "*.proto" | xargs \
-#     protoc \
-#       -I=helios-protos \
-#       -I=/usr/include \
-#       --go_out=. 
-      #--go_opt=module=helios
-
-# RUN protoc --proto_path=helios-protos \
-#            --go_out=generated \
-#            helios-protos/*.proto
-
 RUN CGO_ENABLED=0 GOOS=linux go build -o bin/helios ./cmd/helios
 
 # Runtime
