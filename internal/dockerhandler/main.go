@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -66,7 +67,7 @@ func (c *DockerClient) createContainer(name string, tag string, hash string) (re
 	// Create container
 	resp, err := c.cli.ContainerCreate(c.ctx,
 		&container.Config{
-			Image: tag,
+			Image: strings.ToLower(name),
 			Labels: map[string]string{
 				"runtime_hash": hash,
 			},
