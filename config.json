@@ -1,0 +1,4 @@
+{
+  "ports": [],
+  "volumes": ["/var/run/docker.sock", "/tmp/component_tree.json"]
+}
