@@ -3,12 +3,12 @@
   "volumes": [
     {
       "type": "file",
-      "target": "/var/run/docker.sock",
+      "name": "/var/run/docker.sock",
       "source": ""
     },
     {
       "type": "file",
-      "target": "/tmp/component_tree.json",
+      "name": "/tmp/component_tree.json",
       "source": ""
     }
   ]
