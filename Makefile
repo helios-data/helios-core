@@ -42,3 +42,6 @@ proto:
 
 test:
 	go test ./... -v
+	
+submodule:
+	git submodule update --remote --merge
