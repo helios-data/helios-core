@@ -6,7 +6,7 @@ import (
 
 	"helios/generated/config"
 	"helios/internal/commhandler"
-	"helios/internal/dockerhandler"
+	dh "helios/internal/dockerhandler"
 )
 
 const (
@@ -15,20 +15,10 @@ const (
 	PORT      = "5000"
 )
 
-type ComponentObject struct {
-	mu           sync.RWMutex
-	containerID  string // Docker ID
-	componentID  string
-	group        string // Tree group
-	path         string // Path to component code, is this necessary?
-	tag          string // TODO: Do we want to keep this?
-	commHandler  *commhandler.CommClient
-}
-
 type DockerInterface struct {
-	dc          *dockerhandler.DockerClient
+	dc          *dh.DockerClient
 	runtimeHash string
-	tree        map[string]*ComponentObject // placeholder for local tree object; includes connection object, cont. id, etc
+	tree        map[string]*dh.ComponentObject // placeholder for local tree object; includes connection object, cont. id, etc
 	treeMu      sync.RWMutex                // protects the map itself
 	broadcast   map[string]map[string] chan []byte    // map of component name to broadcast channel for sending messages to all instances of a component
 	broadcastMu sync.RWMutex                // protects the broadcast map
@@ -38,14 +28,14 @@ func initializeDockerClient(hash string) *DockerInterface {
 	return &DockerInterface{
 		dc:          nil,
 		runtimeHash: hash,
-		tree:        make(map[string]*ComponentObject),
+		tree:        make(map[string]*dh.ComponentObject),
 		broadcast:   make(map[string]map[string]chan []byte),
 	}
 }
 
 func (x *DockerInterface) Initialize() {
 	// Create a new docker client
-	x.dc = &dockerhandler.DockerClient{}
+	x.dc = &dh.DockerClient{}
 	x.dc.Initialize()
 
 	// Start the docker network
@@ -54,7 +44,7 @@ func (x *DockerInterface) Initialize() {
 		panic(netErr)
 	}
 
-	connectionChan := make(chan dockerhandler.NewConnection)
+	connectionChan := make(chan dh.NewConnection)
 	go x.dc.StartPortConnection(PORT, connectionChan)
 	go x.handleNewConnection(connectionChan)
 
@@ -77,7 +67,7 @@ func (x *DockerInterface) InitializeComponentTree(path string) {
 	//! Temp: Print out component tree for debugging
 	fmt.Println("Initialized component tree:", x.tree)
 	for name, component := range x.tree {
-		fmt.Printf("Component Name: %s, Component ID: %s, Group: %s, Path: %s, Tag: %s\n", name, component.componentID, component.group, component.path, component.tag)
+		fmt.Printf("Component Name: %s, Component ID: %s, Group: %s, Path: %s, Tag: %s\nVolumes: %v, Ports: %v", name, component.ComponentID, component.Group, component.Path, component.Tag, component.Volumes, component.Ports)
 	}
 }
 
@@ -91,11 +81,11 @@ func (x *DockerInterface) StartComponent(name string) {
 	}
 
 	// Start the container through docker handler and add to docker network
-	id := x.dc.StartContainer(name, c.tag, x.runtimeHash)
+	id := x.dc.StartContainer(name, c, x.runtimeHash)
 		
-	c.mu.Lock()
-	c.containerID = id
-  c.mu.Unlock()
+	c.Mu.Lock()
+	c.ContainerID = id
+	c.Mu.Unlock()
 }
 
 func (x *DockerInterface) StartAllComponents() {
@@ -148,11 +138,13 @@ func (x *DockerInterface) addTreeNodes(node *config.BaseComponent, group string)
 			x.addTreeNodes(c, group+"."+node.Name)
 		}
 	case *config.BaseComponent_Leaf:
-		obj := &ComponentObject{
-			group:       group,
-			path:        v.Leaf.Path,
-			tag:         v.Leaf.Tag,
-			componentID: v.Leaf.Id,
+		obj := &dh.ComponentObject{
+			Group:       group,
+			Path:        v.Leaf.Path,
+			Tag:         v.Leaf.Tag,
+			ComponentID: v.Leaf.Id,
+			Volumes:     v.Leaf.Volumes,
+			Ports:       v.Leaf.Ports,
 		}
 
 		x.treeMu.Lock()
@@ -164,7 +156,7 @@ func (x *DockerInterface) addTreeNodes(node *config.BaseComponent, group string)
 // Handles new connections made by Docker through an update channel.
 // If the component does not existing in the tree by name, a new one is made.
 // A new communications handler is spawned with the connection object and saved to the component.
-func (x *DockerInterface) handleNewConnection(conn chan dockerhandler.NewConnection) {
+func (x *DockerInterface) handleNewConnection(conn chan dh.NewConnection) {
 	for {
 		c := <-conn
 
@@ -174,31 +166,31 @@ func (x *DockerInterface) handleNewConnection(conn chan dockerhandler.NewConnect
 		x.treeMu.RUnlock()
 
 		if ok {
-			comp.mu.Lock()
+			comp.Mu.Lock()
 
 			// Check if an empty communications handler was initialized
-			if comp.commHandler == nil {
-				comp.commHandler = commhandler.NewCommClient(c.Conn)
+			if comp.CommHandler == nil {
+				comp.CommHandler = commhandler.NewCommClient(c.Conn)
 			} else {
-				comp.commHandler.SetConn(c.Conn)
+				comp.CommHandler.SetConn(c.Conn)
 			}
 
-			comp.mu.Unlock()
+			comp.Mu.Unlock()
 		} else {
 			// Need to add the new component safely
 			x.treeMu.Lock()
 			// re-check in case another goroutine added it
 			comp, ok = x.tree[c.Name]
 			if !ok {
-				x.tree[c.Name] = &ComponentObject{
-					commHandler: commhandler.NewCommClient(c.Conn),
+				x.tree[c.Name] = &dh.ComponentObject{
+					CommHandler: commhandler.NewCommClient(c.Conn),
 				}
 				x.treeMu.Unlock()
 			} else {
 				x.treeMu.Unlock()
-				comp.mu.Lock()
-				comp.commHandler = commhandler.NewCommClient(c.Conn)
-				comp.mu.Unlock()
+				comp.Mu.Lock()
+				comp.CommHandler = commhandler.NewCommClient(c.Conn)
+				comp.Mu.Unlock()
 			}
 		}
 	}

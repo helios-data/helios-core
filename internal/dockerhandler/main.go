@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
+	"helios/generated/config"
+	"helios/internal/commhandler"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
@@ -16,6 +19,18 @@ type DockerClient struct {
 	cli *client.Client
 	ctx context.Context
 	net network.CreateResponse
+}
+
+type ComponentObject struct {
+	Mu           sync.RWMutex
+	ContainerID  string // Docker ID
+	ComponentID  string
+	Group        string // Tree group
+	Path         string // Path to component code, is this necessary?
+	Tag          string // TODO: Do we want to keep this?
+	Volumes      []*config.Volume // List of volume mappings for the component
+	Ports        []*config.Port // List of port mappings for the component
+	CommHandler  *commhandler.CommClient
 }
 
 // Initialize the Docker client.
@@ -62,7 +77,30 @@ func (c *DockerClient) GetContainers() (summary []container.Summary) {
 
 // Create a container using information from the image struct and runtime_hash.
 // It should be checked if a container already exists with the same name and hash before calling this function.
-func (c *DockerClient) createContainer(name string, tag string, hash string) (response container.CreateResponse, error error) {
+func (c *DockerClient) createContainer(name string, component *ComponentObject, hash string) (response container.CreateResponse, error error) {
+	var deviceMappings []container.DeviceMapping
+
+	// Port bindings
+	for _, port := range component.Ports {
+		var mode string = "rwm"
+		// TODO: Implement different modes for port mappings if necessary
+		// if path.Mode != "" {
+		// 	mode = path.Mode
+		// }
+
+		deviceMappings = append(deviceMappings, container.DeviceMapping{
+			PathOnHost:        port.Source,
+			PathInContainer:   port.Target,
+			CgroupPermissions: mode,
+		})
+	}
+
+	// Volume bindings
+	var volumeBinds []string
+	for _, volume := range component.Volumes {
+		var mode string = "rw"
+		volumeBinds = append(volumeBinds, fmt.Sprintf("%s:%s:%s", volume.Source, volume.Target, mode))
+	}
 
 	// Create container
 	resp, err := c.cli.ContainerCreate(c.ctx,
@@ -72,7 +110,13 @@ func (c *DockerClient) createContainer(name string, tag string, hash string) (re
 				"runtime_hash": hash,
 			},
 		},
-		nil, nil, nil, name)
+		&container.HostConfig{
+			Binds: volumeBinds,
+			Resources: container.Resources{
+				Devices: deviceMappings,
+			},
+		},
+		nil, nil, name)
 	if err != nil {
 		return resp, err
 	}
@@ -83,7 +127,7 @@ func (c *DockerClient) createContainer(name string, tag string, hash string) (re
 // If the container already exists, it will be restarted or removed and recreated if the hash does not match.
 // Returns the container ID of the started container.
 // Created container will be added to the docker network and started.
-func (c *DockerClient) StartContainer(name string, tag string, hash string) (ID string) {
+func (c *DockerClient) StartContainer(name string, component *ComponentObject, hash string) (ID string) {
 	list := c.GetContainers()
 	var cont container.Summary = container.Summary{}
 
@@ -117,7 +161,7 @@ func (c *DockerClient) StartContainer(name string, tag string, hash string) (ID 
 
 	// If container does not exist, create it
 	if cont.ID == "" {
-		contResp, contErr := c.createContainer(name, tag, hash)
+		contResp, contErr := c.createContainer(name, component, hash)
 		if contErr != nil {
 			// TODO: Handle error properly
 			fmt.Println("Error creating container:", contErr)
