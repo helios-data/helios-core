@@ -1,4 +1,4 @@
-.PHONY: build deps run clean proto test
+.PHONY: build deps run clean protos test
 
 # Variables
 BINARY_NAME=helios
@@ -35,13 +35,13 @@ clean:
 	rm -rf $(BUILD_DIR)
 	go clean
 
-proto:
+protos:
 	$(call MKDIR,$(PROTO_BUILD_DIR))
 
 	protoc -I=$(PROTO_SOURCE_DIR) --go_out=$(PROTO_BUILD_DIR) $(PROTO_SRC)
 
 test:
 	go test ./... -v
-	
+
 submodule:
 	git submodule update --remote --merge
