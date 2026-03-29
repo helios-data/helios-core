@@ -80,6 +80,11 @@ func (x *DockerInterface) StartComponent(name string) {
 		return
 	}
 
+	if c.SkipSpawn {
+		fmt.Printf("Skipping spawn of component %s due to skip_spawn flag.\n", name)
+		return
+	}
+
 	// Start the container through docker handler and add to docker network
 	id := x.dc.StartContainer(name, c, x.runtimeHash)
 		
@@ -145,6 +150,7 @@ func (x *DockerInterface) addTreeNodes(node *config.BaseComponent, group string)
 			ComponentID: v.Leaf.Id,
 			Volumes:     v.Leaf.Volumes,
 			Ports:       v.Leaf.Ports,
+			SkipSpawn:   v.Leaf.SkipSpawn,
 		}
 
 		x.treeMu.Lock()

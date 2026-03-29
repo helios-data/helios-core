@@ -31,6 +31,7 @@ type ComponentObject struct {
 	Volumes      []*config.Volume // List of volume mappings for the component
 	Ports        []*config.Port // List of port mappings for the component
 	CommHandler  *commhandler.CommClient
+	SkipSpawn		 bool // Flag to indicate whether to skip spawning this component
 }
 
 // Initialize the Docker client.
