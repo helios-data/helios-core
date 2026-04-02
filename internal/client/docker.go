@@ -67,7 +67,15 @@ func (x *DockerInterface) InitializeComponentTree(path string) {
 	//! Temp: Print out component tree for debugging
 	fmt.Println("Initialized component tree:", x.tree)
 	for name, component := range x.tree {
-		fmt.Printf("Component Name: %s, Component ID: %s, Group: %s, Path: %s, Tag: %s\nVolumes: %v\nPorts: %v\n\n", name, component.ComponentID, component.Group, component.Path, component.Tag, component.Volumes, component.Ports)
+		fmt.Printf("==============\n")
+		fmt.Printf("Component Name: %s\n", name)
+		fmt.Printf("Component ID: %s\n", component.ComponentID)
+		fmt.Printf("Group: %s\n", component.Group)
+		fmt.Printf("Path: %s\n", component.Path)
+		fmt.Printf("Tag: %s\n", component.Tag)
+		fmt.Printf("Volumes: %v\n", component.Volumes)
+		fmt.Printf("Ports: %v\n", component.Ports)
+		fmt.Printf("==============\n")
 	}
 }
 
