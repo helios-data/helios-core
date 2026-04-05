@@ -1,4 +1,4 @@
-package dockerhandler
+package docker
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"helios/generated/config"
-	"helios/internal/commhandler"
+	"helios/internal/transport"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
@@ -30,7 +30,7 @@ type ComponentObject struct {
 	Tag          string // TODO: Do we want to keep this?
 	Volumes      []*config.Volume // List of volume mappings for the component
 	Ports        []*config.Port // List of port mappings for the component
-	CommHandler  *commhandler.CommClient
+	CommHandler  *transport.CommClient
 	SkipSpawn		 bool // Flag to indicate whether to skip spawning this component
 }
 

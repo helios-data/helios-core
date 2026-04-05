@@ -1,8 +1,8 @@
-package commhandler
+package transport
 
 import (
 	"net"
-	
+
 	packet "helios/generated/transport"
 )
 

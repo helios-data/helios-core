@@ -1,6 +1,6 @@
-package commhandler
+package transport
 
-import (	
+import (
 	"google.golang.org/protobuf/proto"
 
 	packet "helios/generated/transport"
