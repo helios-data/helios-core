@@ -1,9 +1,10 @@
-package client
+package core
 
 import (
 	"os"
 
 	"helios/generated/config"
+
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

@@ -1,11 +1,11 @@
-package client
+package core
 
 import (
 	"math/rand"
 	"strconv"
 	"testing"
 
-  "gotest.tools/assert"
+	"gotest.tools/assert"
 	is "gotest.tools/assert/cmp"
 )
 

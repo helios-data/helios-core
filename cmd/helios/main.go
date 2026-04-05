@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"helios/internal/client"
+	"helios/internal/core"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,7 +18,7 @@ func main() {
 		runType = "local"
 	}
 
-	cli := client.Initialize(runType, runtime_hash)
+	cli := core.Initialize(runType, runtime_hash)
 	defer cli.Close()
 
 	cli.InitializeComponentTree(component_tree_path)
