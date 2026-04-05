@@ -1,4 +1,4 @@
-package dockerhandler
+package docker
 
 import (
 	"context"

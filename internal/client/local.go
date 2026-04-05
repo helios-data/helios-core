@@ -23,7 +23,7 @@ func (x *LocalInterface) InitializeComponentTree(path string) {
 }
 
 func (x *LocalInterface) StartComponent(name string) {
-	
+
 }
 
 func (x *LocalInterface) StartAllComponents() {
