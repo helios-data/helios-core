@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"helios/internal/core"
 	"helios/internal/logger"
+	"helios/internal/server"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +16,12 @@ func main() {
 	root := &cli.Command{
 		Name: "helios",
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "address",
+				Usage:   "address to listen on",
+				Value:   "0.0.0.0:5000",
+				Aliases: []string{"a"},
+			},
 			&cli.BoolFlag{
 				Name:    "local",
 				Aliases: []string{"l"},
@@ -40,41 +46,43 @@ func main() {
 		Action: runHelios,
 	}
 
-	if err := root.Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "helios: %v\n", err)
+	err := root.Run(context.Background(), os.Args)
+	if err != nil {
+		logger.Errorw("Error running Helios", "error", err)
 		os.Exit(1)
 	}
 }
 
 func runHelios(ctx context.Context, cmd *cli.Command) error {
+	// Initialize logger
 	logger.MustInit(cmd.String("log-level"), os.Stderr)
 	defer func() { _ = logger.Sync() }()
 
 	logger.Info("Starting Helios")
 	logger.Debugw("Arguments", "args", os.Args)
 
-	runType := "docker"
-	if cmd.Bool("local") {
-		runType = "local"
+	// Cancel on Ctrl-C (SIGINT) or SIGTERM so work tied to this context stops cleanly.
+	shutdownCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Start the Helios tcp server
+	address := cmd.String("address")
+	srv, err := server.StartServer(shutdownCtx, address)
+	if err != nil {
+		logger.Errorw("Error starting server", "error", err)
+		return fmt.Errorf("error starting server: %w", err)
 	}
+	defer func() { _ = srv.Close() }()
 
-	coreClient := core.Initialize(runType, cmd.String("runtime-hash"))
-	defer coreClient.Close()
+	// coreClient := core.Initialize(runType, cmd.String("runtime-hash"))
+	// defer coreClient.Close()
 
-	coreClient.InitializeComponentTree(cmd.String("component-tree"))
-	go coreClient.StartAllComponents()
+	// coreClient.InitializeComponentTree(cmd.String("component-tree"))
+	// go coreClient.StartAllComponents()
 
 	logger.Info("Running...")
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
-	select {
-	case <-quit:
-		logger.Info("shutting down")
-		return nil
-	case <-ctx.Done():
-		logger.Info("shutting down")
-		return ctx.Err()
-	}
+	<-shutdownCtx.Done()
+	logger.Info("shutting down")
+	return nil
 }
