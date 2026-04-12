@@ -1,33 +1,80 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"helios/internal/core"
+	"helios/internal/logger"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/urfave/cli/v3"
 )
 
 func main() {
-	runtime_hash := os.Getenv("RUNTIME_HASH")
-	docker_disabled := os.Getenv("DOCKER_DISABLED")
-	component_tree_path := os.Getenv("COMPONENT_TREE_PATH")
+	root := &cli.Command{
+		Name: "helios",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:    "local",
+				Aliases: []string{"l"},
+				Usage:   "run components locally instead of Docker",
+			},
+			&cli.StringFlag{
+				Name:  "component-tree",
+				Usage: "path to component tree configuration",
+			},
+			&cli.StringFlag{
+				Name:    "runtime-hash",
+				Aliases: []string{"rt"},
+				Usage:   "runtime identifier hash",
+			},
+			&cli.StringFlag{
+				Name:    "log-level",
+				Usage:   "logging level: error, warn, info, debug, verbose",
+				Value:   "info",
+				Aliases: []string{"L"},
+			},
+		},
+		Action: runHelios,
+	}
+
+	if err := root.Run(context.Background(), os.Args); err != nil {
+		fmt.Fprintf(os.Stderr, "helios: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runHelios(ctx context.Context, cmd *cli.Command) error {
+	logger.MustInit(cmd.String("log-level"), os.Stderr)
+	defer func() { _ = logger.Sync() }()
+
+	logger.Info("Starting Helios")
+	logger.Debugw("Arguments", "args", os.Args)
 
 	runType := "docker"
-	if docker_disabled == "1" {
+	if cmd.Bool("local") {
 		runType = "local"
 	}
 
-	cli := core.Initialize(runType, runtime_hash)
-	defer cli.Close()
+	coreClient := core.Initialize(runType, cmd.String("runtime-hash"))
+	defer coreClient.Close()
 
-	cli.InitializeComponentTree(component_tree_path)
-	go cli.StartAllComponents()
+	coreClient.InitializeComponentTree(cmd.String("component-tree"))
+	go coreClient.StartAllComponents()
 
-	// Wait for Ctrl+C or kill signal
+	logger.Info("Running...")
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit // blocks until Ctrl+C or kill signal
 
-	fmt.Println("Shutting down...")
+	select {
+	case <-quit:
+		logger.Info("shutting down")
+		return nil
+	case <-ctx.Done():
+		logger.Info("shutting down")
+		return ctx.Err()
+	}
 }

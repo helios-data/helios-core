@@ -10,10 +10,6 @@ PROTO_BUILD_DIR=generated
 # Find all .proto files in the proto directory and subdirectories
 PROTO_SRC := $(shell find $(PROTO_SOURCE_DIR) -name "*.proto")
 
-# 1=true, 0=false
-DOCKER_DISABLED=1
-export DOCKER_DISABLED
-
 MKDIR = mkdir -p $(1)
 RM = rm -rf
 SEPARATOR = /
@@ -29,7 +25,7 @@ deps:
 	go mod tidy
 
 run:
-	go run $(MAIN_PATH)	
+	go run $(MAIN_PATH) --local
 
 clean:
 	rm -rf $(BUILD_DIR)
