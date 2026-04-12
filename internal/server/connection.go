@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"helios/generated/transport"
@@ -10,120 +9,145 @@ import (
 	"io"
 	"net"
 	"syscall"
-
-	"google.golang.org/protobuf/proto"
 )
 
-const MAX_FRAME_BYTES = 16 * 1024 * 1024 // 16MB
+const MAX_MAILBOX_SIZE = 128
 
-type ConnectionHandler struct {
-	conn net.Conn
+type ClientInfo struct {
+	version int
+	address string
 }
 
-func (h *ConnectionHandler) Handle(ctx context.Context) {
-	// Start Handshake
-	handshakeRequestMessage, err := h.getNextMessage(ctx)
+type ConnectionHandler struct {
+	ctx     context.Context
+	conn    net.Conn
+	mailbox chan *transport.TransportMessage
+}
+
+func NewConnectionHandler(ctx context.Context, conn net.Conn) *ConnectionHandler {
+	return &ConnectionHandler{
+		ctx:     ctx,
+		conn:    conn,
+		mailbox: make(chan *transport.TransportMessage, MAX_MAILBOX_SIZE),
+	}
+}
+
+func (h *ConnectionHandler) Handle() {
+	clientInfo, err := h.performHandshake()
+
 	if err != nil {
-		h.handleError(ctx, err)
-		return
+		if h.ctx.Err() != nil {
+			return
+		}
+
+		if isPeerOrLocalClose(err) {
+			logger.Debugw("Connection closed", "remote_address", h.conn.RemoteAddr(), "reason", err)
+			return
+		}
+
+		logger.Errorw("Error reading from connection", "remote_address", h.conn.RemoteAddr(), "error", err)
 	}
 
-	// Parse Handshake Request
-	handshakeRequest := &transport.HandshakeRequest{}
-	err = proto.Unmarshal(handshakeRequestMessage, handshakeRequest)
+	logger.Debugw("Handshake successful", "remote_address", h.conn.RemoteAddr(), "client_info", clientInfo)
+
+	go h.readLoop()
+	go h.writeLoop()
+
+	<-h.ctx.Done()
+	logger.Infow("Closing connection", "remote_address", h.conn.RemoteAddr())
+	h.Close()
+}
+
+func (h *ConnectionHandler) performHandshake() (ClientInfo, error) {
+	// Start Handshake
+	transportMessage, err := ReadMessage(h.conn)
 	if err != nil {
-		h.handleError(ctx, err)
-		return
+		return ClientInfo{}, err
+	}
+
+	handshakeRequest := transportMessage.GetHandshakeRequest()
+	if handshakeRequest == nil {
+		return ClientInfo{}, fmt.Errorf("Expected handshake request, got: %v", transportMessage)
 	}
 
 	logger.Infow("Handshake request received", "remote_address", h.conn.RemoteAddr(), "message", handshakeRequest)
 
+	clientVersion := int(handshakeRequest.GetVersion())
+	if clientVersion != PROTOCOL_VERSION {
+		return ClientInfo{}, fmt.Errorf("Unsupported protocol version from client: %d", handshakeRequest.GetVersion())
+	}
+
 	// Send Handshake Response
-	handshakeResponse := &transport.HandshakeResponse{
-		Version: 1,
+	handshakeResponse := &transport.TransportMessage{
+		Message: &transport.TransportMessage_HandshakeResponse{
+			HandshakeResponse: &transport.HandshakeResponse{
+				Version: PROTOCOL_VERSION,
+			},
+		},
 	}
-	handshakeResponseData, err := proto.Marshal(handshakeResponse)
+
+	err = SendMessage(h.conn, handshakeResponse)
 	if err != nil {
-		return
-	}
-	err = h.sendMessage(ctx, handshakeResponseData)
-	if err != nil {
-		return
+		return ClientInfo{}, err
 	}
 
 	logger.Infow("Handshake response sent", "remote_address", h.conn.RemoteAddr(), "message", handshakeResponse)
 
-	// Start Event Loop
+	clientInfo := ClientInfo{
+		version: clientVersion,
+		address: h.conn.RemoteAddr().String(),
+	}
+
+	return clientInfo, nil
+}
+
+func (h *ConnectionHandler) readLoop() {
 	for {
-		message, err := h.getNextMessage(ctx)
+		transportMessage, err := ReadMessage(h.conn)
 		if err != nil {
-			h.handleError(ctx, err)
-			return
+			if h.ctx.Err() != nil {
+				return
+			}
+
+			if isPeerOrLocalClose(err) {
+				logger.Debugw("Connection closed", "remote_address", h.conn.RemoteAddr(), "reason", err)
+				return
+			}
+
+			logger.Errorw("Error reading from connection", "remote_address", h.conn.RemoteAddr(), "error", err)
+			continue
 		}
 
-		logger.Infow("Message received", "remote_address", h.conn.RemoteAddr(), "message", string(message))
+		// Handle the message (for now we just log it)
+		logger.Debugw("Message received from client", "remote_address", h.conn.RemoteAddr(), "message", transportMessage)
 	}
 }
 
-func (h *ConnectionHandler) getNextMessage(ctx context.Context) ([]byte, error) {
-	// Message is a 4-byte network byte order length prefix followed by the message
-	var lengthPrefix [4]byte
-	if _, err := io.ReadFull(h.conn, lengthPrefix[:]); err != nil {
-		h.handleError(ctx, err)
-		return nil, err
-	}
+func (h *ConnectionHandler) writeLoop() {
+	for {
+		select {
+		case msg := <-h.mailbox:
+			err := SendMessage(h.conn, msg)
+			if err != nil {
+				if h.ctx.Err() != nil {
+					return
+				}
 
-	n := binary.BigEndian.Uint32(lengthPrefix[:])
-	if n == 0 {
-		logger.Errorw("Invalid message length", "remote_address", h.conn.RemoteAddr(), "length", n)
-		return nil, fmt.Errorf("Invalid message length: %d", n)
-	}
-	if n > MAX_FRAME_BYTES {
-		logger.Errorw("Message length exceeds max frame size", "remote_address", h.conn.RemoteAddr(), "length", n, "max_size", MAX_FRAME_BYTES)
-		return nil, fmt.Errorf("Message length exceeds max frame size: %d", n)
-	}
+				if isPeerOrLocalClose(err) {
+					logger.Debugw("Connection closed", "remote_address", h.conn.RemoteAddr(), "reason", err)
+					return
+				}
 
-	message := make([]byte, n)
-	if _, err := io.ReadFull(h.conn, message); err != nil {
-		h.handleError(ctx, err)
-		return nil, err
+				logger.Errorw("Error writing to connection", "remote_address", h.conn.RemoteAddr(), "error", err)
+			}
+		case <-h.ctx.Done():
+			return
+		}
 	}
-	return message, nil
 }
 
-func (h *ConnectionHandler) sendMessage(ctx context.Context, message []byte) error {
-	// Check message size is within the allowed range
-	if len(message) == 0 {
-		logger.Errorw("Invalid message length", "remote_address", h.conn.RemoteAddr(), "length", len(message))
-		return fmt.Errorf("Invalid message length: %d", len(message))
-	}
-	if len(message) > MAX_FRAME_BYTES {
-		logger.Errorw("Message size exceeds max frame size", "remote_address", h.conn.RemoteAddr(), "size", len(message), "max_size", MAX_FRAME_BYTES)
-		return fmt.Errorf("message size exceeds max frame size: %d", len(message))
-	}
-
-	// First send the length of the message in network byte order, then the message
-	err := binary.Write(h.conn, binary.BigEndian, uint32(len(message)))
-	if err != nil {
-		return err
-	}
-	_, err = h.conn.Write(message)
-	if err != nil {
-		h.handleError(ctx, err)
-		return err
-	}
-	return err
-}
-
-func (h *ConnectionHandler) handleError(ctx context.Context, err error) {
-	if ctx.Err() != nil {
-		return
-	}
-	if isPeerOrLocalClose(err) {
-		logger.Debugw("connection closed", "remote_address", h.conn.RemoteAddr(), "reason", err)
-		return
-	}
-	logger.Errorw("Error reading from connection", "remote_address", h.conn.RemoteAddr(), "error", err)
+func (h *ConnectionHandler) Close() {
+	h.conn.Close()
 }
 
 // isPeerOrLocalClose reports errors that usually mean the TCP session ended

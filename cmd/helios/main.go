@@ -65,6 +65,9 @@ func runHelios(ctx context.Context, cmd *cli.Command) error {
 	shutdownCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// coreClient := core.Initialize(runType, cmd.String("runtime-hash"))
+	// defer coreClient.Close()
+
 	// Start the Helios tcp server
 	address := cmd.String("address")
 	srv, err := server.StartServer(shutdownCtx, address)
@@ -73,9 +76,6 @@ func runHelios(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("error starting server: %w", err)
 	}
 	defer func() { _ = srv.Close() }()
-
-	// coreClient := core.Initialize(runType, cmd.String("runtime-hash"))
-	// defer coreClient.Close()
 
 	// coreClient.InitializeComponentTree(cmd.String("component-tree"))
 	// go coreClient.StartAllComponents()

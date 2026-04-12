@@ -26,7 +26,7 @@ func StartServer(ctx context.Context, addr string) (*Server, error) {
 
 	go server.listenForConnections(ctx)
 
-	logger.Infow("Server started and listening for connections")
+	logger.Info("Server started and listening for connections")
 
 	return server, nil
 }
@@ -49,8 +49,8 @@ func (s *Server) listenForConnections(ctx context.Context) {
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	logger.Infow("New connection", "remote_address", conn.RemoteAddr())
 
-	handler := &ConnectionHandler{conn: conn}
-	go handler.Handle(ctx)
+	handler := NewConnectionHandler(ctx, conn)
+	handler.Handle()
 }
 
 func (s *Server) Close() error {
