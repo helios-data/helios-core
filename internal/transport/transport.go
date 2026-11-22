@@ -2,6 +2,7 @@ package transport
 
 import (
 	"net"
+	"strings"
 	"sync"
 
 	transportpb "helios/generated/transport"
@@ -10,6 +11,8 @@ import (
 
 type CommClient struct{}
 
+const subscriptionWildcard = "*"
+
 type Sender interface {
 	ClientAddress() string
 	SendTransportMessage(message *transportpb.TransportMessage)
@@ -17,10 +20,9 @@ type Sender interface {
 }
 
 type TransportService struct {
-	mu                   sync.RWMutex
-	tree                 *tree.ComponentTree
-	subscriptions        map[string]subscription
-	subscriptionsByEvent map[eventKey]map[string]struct{}
+	mu            sync.RWMutex
+	tree          *tree.ComponentTree
+	subscriptions map[string]subscription
 }
 
 type eventKey struct {
@@ -37,9 +39,8 @@ type subscription struct {
 
 func NewTransportService(tree *tree.ComponentTree) *TransportService {
 	return &TransportService{
-		tree:                 tree,
-		subscriptions:        make(map[string]subscription),
-		subscriptionsByEvent: make(map[eventKey]map[string]struct{}),
+		tree:          tree,
+		subscriptions: make(map[string]subscription),
 	}
 }
 
@@ -137,7 +138,15 @@ func (s *TransportService) handleEventSubscribe(sender Sender, message *transpor
 		sender.SendError(message.GetAddress(), message.GetEventName(), transportpb.EventError_INVALID_REQUEST, "subscription id is empty", nil)
 		return
 	}
-	if _, _, err := s.tree.GetEvent(message.GetAddress(), message.GetEventName()); err != nil {
+	// A wildcard address cannot be looked up in the component tree. Concrete
+	// addresses still go through the usual validation; GetEvent also validates
+	// that the event name is non-empty.
+	if message.GetAddress() == subscriptionWildcard {
+		if strings.TrimSpace(message.GetEventName()) == "" {
+			sender.SendError(message.GetAddress(), message.GetEventName(), transportpb.EventError_INVALID_REQUEST, "event name is empty", &subscriptionID)
+			return
+		}
+	} else if _, _, err := s.tree.GetEvent(message.GetAddress(), message.GetEventName()); err != nil {
 		sender.SendError(message.GetAddress(), message.GetEventName(), transportpb.EventError_INVALID_REQUEST, err.Error(), &subscriptionID)
 		return
 	}
@@ -170,31 +179,14 @@ func (s *TransportService) addSubscription(sub subscription) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if existing, ok := s.subscriptions[sub.id]; ok {
-		delete(s.subscriptionsByEvent[existing.key], existing.id)
-	}
-
 	s.subscriptions[sub.id] = sub
-	if s.subscriptionsByEvent[sub.key] == nil {
-		s.subscriptionsByEvent[sub.key] = make(map[string]struct{})
-	}
-	s.subscriptionsByEvent[sub.key][sub.id] = struct{}{}
 }
 
 func (s *TransportService) removeSubscription(subscriptionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	sub, ok := s.subscriptions[subscriptionID]
-	if !ok {
-		return
-	}
-
 	delete(s.subscriptions, subscriptionID)
-	delete(s.subscriptionsByEvent[sub.key], subscriptionID)
-	if len(s.subscriptionsByEvent[sub.key]) == 0 {
-		delete(s.subscriptionsByEvent, sub.key)
-	}
 }
 
 func (s *TransportService) removeSubscriptionsForClient(address string) {
@@ -206,10 +198,6 @@ func (s *TransportService) removeSubscriptionsForClient(address string) {
 			continue
 		}
 		delete(s.subscriptions, subscriptionID)
-		delete(s.subscriptionsByEvent[sub.key], subscriptionID)
-		if len(s.subscriptionsByEvent[sub.key]) == 0 {
-			delete(s.subscriptionsByEvent, sub.key)
-		}
 	}
 }
 
@@ -237,10 +225,13 @@ func (s *TransportService) subscribersFor(key eventKey) []subscription {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	ids := s.subscriptionsByEvent[key]
-	subscribers := make([]subscription, 0, len(ids))
-	for id := range ids {
-		subscribers = append(subscribers, s.subscriptions[id])
+	subscribers := make([]subscription, 0)
+	for _, sub := range s.subscriptions {
+		addressMatches := sub.key.address == key.address || sub.key.address == subscriptionWildcard
+		eventMatches := sub.key.eventName == key.eventName || sub.key.eventName == subscriptionWildcard
+		if addressMatches && eventMatches {
+			subscribers = append(subscribers, sub)
+		}
 	}
 	return subscribers
 }

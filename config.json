@@ -1,4 +1,5 @@
 {
   "ports": [],
-  "volumes": []
+  "volumes": [],
+  "devices": []
 }

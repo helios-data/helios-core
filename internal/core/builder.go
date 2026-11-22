@@ -101,5 +101,5 @@ func componentFromProto(leaf *configpb.Component) (*ct.Component, error) {
 		return nil, fmt.Errorf("leaf component is nil")
 	}
 	// Identity stays on tree nodes; component data is runtime/config state only.
-	return ct.NewComponent(leaf.DockerSpec), nil
+	return ct.NewComponent(leaf.DockerSpec, leaf.GetFlags()), nil
 }
